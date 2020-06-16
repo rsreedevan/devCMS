@@ -1,29 +1,34 @@
 <?php
-
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Notifications\User\Created as UserCreated;
-use App\Notifications\User\Destroyed as UserDestroyed;
 use App\User;
 use Exception;
-use Facade\FlareClient\View;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
-
-use App\AdminNotifier;
+use App\Http\Requests\Admin\User\CreateRequest as UserCreateRequest;
+use App\Http\Requests\Admin\User\UpdateRequest as UserUpdateRequest;
 
 class UserController extends Controller
 {
-    private $_adminNotifier;
-    public function __construct(AdminNotifier $adminNotifier)
+      
+    /**
+     * __construct
+     *
+     * @return void
+     */
+    public function __construct()
     {
-        $this->_adminNotifier = $adminNotifier;
         $this->middleware('auth');
     }
-
+    
+    /**
+     * index
+     *
+     * @return void
+     */
     public function index()
     {
         $users = User::all();
@@ -34,38 +39,22 @@ class UserController extends Controller
             'permissions' => Permission::all()
             ]);
     }
-
-    public function create(Request $request)
-    {
-        $request->validate([
-            'email' => ['email','unique:users','required'],
-            'name' => ['required']
-        ]);
-
+    
+    /**
+     * store
+     *
+     * @param  mixed $request
+     * @return void
+     */
+    public function store(UserCreateRequest $request)
+    {   
        try{
-           $user =  User::create(
-                [
-                    'name' => $request->name,
-                    'email' => $request->email,
-                    'password' => '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi'
-                ]
-            );
 
-            // Add roles 
+            $user =  User::create($request->all());
             if($request->roles)
                 $user->syncRoles($request->roles);
-
-            // Assign Explisit Permissions
             if($request->permissions)
                 $user->syncPermissions($request->permissions);
-
-            // Notify user about the account
-            $user->notify(new UserCreated());
-
-            $this->_adminNotifier->type = 'user.created';
-            $this->_adminNotifier->data = $user;
-            $this->_adminNotifier->notify();
-
             return redirect()->route('users')->with(['success' => 'User created successfully']);
             
         } 
@@ -75,18 +64,42 @@ class UserController extends Controller
 
         }
     }
-
-    public function edit($id, Request $request)
+    
+    /**
+     * edit
+     *
+     * @param  mixed $user
+     * @return void
+     */
+    public function edit(User $user)
     {
+        if(Gate::allows('user.edit',$user))
+        {
+            // User is allowed to edit only his profile 
+            return View('admin.user.edit',[
+                'user' => $user->format(),
+                'page_title' => 'Manage Users',
+                'roles' => Role::all(),
+                'permissions' => Permission::all()
+            ]);
+        }
+        else
+            return new Exception('Not Authorised');
         
+    }
 
+    
+    /**
+     * update
+     *
+     * @param  mixed $user
+     * @param  mixed $request
+     * @return void
+     */
+    public function update(User $user, UserUpdateRequest $request)
+    {
         if($request->post())
         {   
-            $user = User::findOrFail($id);
-            $request->validate([
-                'name' => ['required'],
-                'email' => ['required', 'email']
-            ]);
             if ($user->update(
                 [
                     'name' => $request->name,
@@ -98,41 +111,41 @@ class UserController extends Controller
                 }
             return redirect()->back()->with('success', 'User updated successfully');
         }
-        $user = User::findOrFail($id)->format();
-        if(Gate::allows('user.edit',$user))
-        {
-            // User is allowed to edit only his profile 
-            return View('admin.user.edit',[
-                'user' => $user,
-                'page_title' => 'Manage Users',
-                'roles' => Role::all(),
-                'permissions' => Permission::all()
-            ]);
-        }
     }
 
-    public function destroy($id)
+    
+    /**
+     * destroy
+     *
+     * @param  mixed $user
+     * @return void
+     */
+    public function destroy(User $user)
     {
-        $user = User::findOrFail($id);
-        $user->notify(new UserDestroyed());
-
-        $this->_adminNotifier->type = 'user.destroyed';
-        $this->_adminNotifier->data = $user;
-        $this->_adminNotifier->notify();
-
-        if(User::destroy($id))
+        if($user->delete())
             return back()->with('success', 'User deleted successfully');
         else 
             return back()->withErrors('Unable to delete the user');
     }
-
+    
+    /**
+     * roles
+     *
+     * @return void
+     */
     public function roles()
     {
         $permissions = Permission::all();
         $roles = Role::all();
         return View('admin.user.roles', ['roles' => $roles, 'page_title' => 'Manag User Roles', 'permissions' => $permissions]);
     }
-
+    
+    /**
+     * role_create
+     *
+     * @param  mixed $request
+     * @return void
+     */
     public function role_create(Request $request)
     {
         $request->validate([
@@ -144,11 +157,19 @@ class UserController extends Controller
 
         return redirect()->back()->with('success', 'Role created successfully');
     }
-
-    public function roleDestroy($id) 
+    
+    /**
+     * roleDestroy
+     *
+     * @param  mixed $role
+     * @return void
+     */
+    public function roleDestroy(Role $role) 
     {
-        Role::destroy($id);
-        return redirect()->route('roles')->with('success', 'Role deleted successfully');
+        if($role->delete()) 
+            return redirect()->route('roles')->with('success', 'Role deleted successfully');
+        else 
+        return redirect()->route('roles')->with('error', 'Unable to delete the role');   
     }
 
 

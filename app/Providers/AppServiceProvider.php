@@ -5,7 +5,8 @@ namespace App\Providers;
 use Illuminate\Support\ServiceProvider;
 use App\Collaborator;
 use App\Example;
-
+use App\Observers\UserObserver;
+use App\User;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -32,6 +33,6 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot()
     {
-        //
+        User::observe(UserObserver::class);
     }
 }
